@@ -1,6 +1,6 @@
 import asyncio
 from app.core.database import engine, Base
-from app.models import User, Product, Order, OrderItem, CustomOrder
+from app.models import User, Product, Order, OrderItem, Student
 
 
 async def reset():

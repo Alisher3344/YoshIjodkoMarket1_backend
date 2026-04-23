@@ -29,11 +29,15 @@ async def check_login(db: AsyncSession, username: str, password: str):
 
 async def create(db: AsyncSession, data: UserCreate) -> User:
     user = User(
-        name     = data.name,
-        username = data.username,
-        password = hash_password(data.password),
-        email    = data.email,
-        role     = data.role,
+        name      = data.name,
+        username  = data.username,
+        password  = hash_password(data.password),
+        phone     = data.phone or data.username,
+        full_name = data.full_name or "",
+        school    = data.school or "",
+        avatar    = data.avatar or "",
+        role      = data.role or "admin",
+        active    = True,
     )
     db.add(user)
     await db.flush()
@@ -42,12 +46,17 @@ async def create(db: AsyncSession, data: UserCreate) -> User:
 
 
 async def update(db: AsyncSession, user: User, data: UserUpdate) -> User:
-    user.name     = data.name
-    user.username = data.username
-    user.email    = data.email
-    user.role     = data.role
-    if data.password:
-        user.password = hash_password(data.password)
+    payload = data.model_dump(exclude_unset=True)
+
+    if "password" in payload:
+        pwd = payload.pop("password")
+        if pwd:
+            user.password = hash_password(pwd)
+
+    for key, value in payload.items():
+        if value is not None:
+            setattr(user, key, value)
+
     await db.flush()
     await db.refresh(user)
     return user

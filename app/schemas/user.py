@@ -3,63 +3,45 @@ from pydantic import BaseModel
 
 
 class UserCreate(BaseModel):
-    name:         str
-    username:     str
-    password:     str
-    email:        str   = ""
-    phone:        str   = ""
-    full_name:    str   = ""
-    school:       str   = ""
-    age:          int   = 0
-    is_disabled:  bool  = False
-    card_number:  str   = ""
-    illness_info: str   = ""
-    avatar:       str   = ""
-    role:         str   = "student"
+    name:      str
+    username:  str
+    password:  str
+    phone:     Optional[str] = ""
+    school:    Optional[str] = ""
+    full_name: Optional[str] = ""
+    avatar:    Optional[str] = ""
+    role:      Optional[str] = "admin"
 
 
 class UserUpdate(BaseModel):
-    name:         str
-    username:     str
-    email:        str   = ""
-    phone:        str   = ""
-    full_name:    str   = ""
-    school:       str   = ""
-    age:          int   = 0
-    is_disabled:  bool  = False
-    card_number:  str   = ""
-    illness_info: str   = ""
-    avatar:       str   = ""
-    role:         str   = "student"
-    password:     Optional[str] = None
-
-
-class UserResponse(BaseModel):
-    id:           int
-    name:         str
-    full_name:    str
-    username:     str
-    email:        str
-    phone:        str
-    school:       str
-    age:          int
-    is_disabled:  bool
-    card_number:  str
-    illness_info: str
-    avatar:       str
-    role:         str
-    active:       bool
-
-    class Config:
-        from_attributes = True
+    name:      Optional[str] = None
+    username:  Optional[str] = None
+    phone:     Optional[str] = None
+    school:    Optional[str] = None
+    full_name: Optional[str] = None
+    avatar:    Optional[str] = None
+    role:      Optional[str] = None
+    password:  Optional[str] = None
 
 
 class ProfileUpdate(BaseModel):
-    """Foydalanuvchi o'z profilini yangilash uchun"""
-    name:         str
-    full_name:    str   = ""
-    school:       str   = ""
-    age:          int   = 0
-    card_number:  str   = ""
-    illness_info: str   = ""
-    avatar:       str   = ""
+    name:      Optional[str] = None
+    full_name: Optional[str] = None
+    phone:     Optional[str] = None
+    school:    Optional[str] = None
+    avatar:    Optional[str] = None
+
+
+class UserResponse(BaseModel):
+    id:        int
+    name:      str
+    full_name: str
+    username:  str
+    phone:     str
+    school:    str
+    avatar:    str
+    role:      str
+    active:    bool
+
+    class Config:
+        from_attributes = True

@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..core.database import get_db
-from ..core.security import create_access_token, get_current_user, hash_password, verify_password
+from ..core.security import create_access_token, get_current_user, verify_password
 from ..models.user import User
 from ..schemas.auth import LoginRequest, RegisterRequest
 from ..schemas.user import ProfileUpdate
+from ..core.security import hash_password
 
 router = APIRouter()
 
@@ -14,23 +15,19 @@ router = APIRouter()
 def normalize_phone(phone: str) -> str:
     if not phone:
         return ""
-    return re.sub(r'[^\d+]', '', phone)
+    return re.sub(r"\D", "", phone)
 
 
 def user_dict(u: User) -> dict:
     return {
-        "id":           u.id,
-        "name":         u.name,
-        "full_name":    u.full_name or "",
-        "username":     u.username,
-        "phone":        u.phone or "",
-        "school":       u.school or "",
-        "age":          u.age or 0,
-        "is_disabled":  u.is_disabled,
-        "card_number":  u.card_number or "",
-        "illness_info": u.illness_info or "",
-        "avatar":       u.avatar or "",
-        "role":         u.role,
+        "id":        u.id,
+        "name":      u.name or "",
+        "full_name": u.full_name or "",
+        "username":  u.username,
+        "phone":     u.phone or "",
+        "school":    u.school or "",
+        "avatar":    u.avatar or "",
+        "role":      u.role,
     }
 
 
@@ -54,28 +51,44 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/register")
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    phone_clean = normalize_phone(data.phone)
-    if not phone_clean:
-        raise HTTPException(status_code=400, detail="Telefon raqami noto'g'ri")
+    name = (data.name or "").strip()
+    full_name = (data.full_name or "").strip()
+    password = data.password or ""
+    phone_raw = data.phone or ""
 
-    result = await db.execute(select(User).where(User.username == phone_clean))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Bu telefon raqami allaqachon ro'yxatdan o'tgan")
+    if not name:
+        raise HTTPException(status_code=400, detail="Ism kiritilishi shart")
+    if len(password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Parol kamida 6 ta belgidan iborat bo'lishi kerak",
+        )
+
+    phone_digits = re.sub(r"\D", "", phone_raw)
+    if len(phone_digits) != 12 or not phone_digits.startswith("998"):
+        raise HTTPException(
+            status_code=400,
+            detail="Telefon raqam to'liq emas (+998 XX XXX XX XX)",
+        )
+
+    username = phone_digits  # username sifatida toza telefon raqami
+    phone_pretty = f"+{phone_digits[:3]} {phone_digits[3:5]} {phone_digits[5:8]} {phone_digits[8:10]} {phone_digits[10:12]}"
+
+    exists = await db.execute(select(User).where(User.username == username))
+    if exists.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="Bu telefon raqam allaqachon ro'yxatdan o'tgan",
+        )
 
     user = User(
-        name         = data.name.strip(),
-        full_name    = "",
-        username     = phone_clean,
-        phone        = phone_clean,
-        password     = hash_password(data.password),
-        school       = data.school or "",
-        age          = data.age or 0,
-        is_disabled  = bool(data.is_disabled),
-        card_number  = data.card_number if data.is_disabled else "",
-        illness_info = "",
-        avatar       = "",
-        role         = "student",
-        active       = True,
+        name=name,
+        full_name=full_name,
+        username=username,
+        phone=phone_pretty,
+        password=hash_password(password),
+        role="user",
+        active=True,
     )
     db.add(user)
     await db.flush()
@@ -89,26 +102,41 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
 async def me(current_user=Depends(get_current_user)):
     return user_dict(current_user)
 
+
+@router.put("/profile")
+async def update_profile(
+    data: ProfileUpdate,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin o'z profilini yangilaydi (faqat yuborilgan fieldlar)"""
+    payload = data.model_dump(exclude_unset=True)
+
+    for key, value in payload.items():
+        if value is not None:
+            setattr(current_user, key, value)
+
+    await db.flush()
+    await db.refresh(current_user)
+    return user_dict(current_user)
+
+
 @router.get("/my-sales")
 async def my_sales(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Foydalanuvchining sotilgan mahsulotlari (o'z mahsulotlariga kelgan buyurtmalar)"""
     from ..models.order import Order, OrderItem
     from ..models.product import Product
     from sqlalchemy.orm import selectinload
 
-    # Foydalanuvchining mahsulotlari ID lari
     prod_res = await db.execute(
         select(Product.id).where(Product.user_id == current_user.id)
     )
     product_ids = [row[0] for row in prod_res.all()]
-
     if not product_ids:
         return []
 
-    # Shu mahsulotlarga tegishli order_items
     items_res = await db.execute(
         select(OrderItem)
         .options(selectinload(OrderItem.order))
@@ -136,25 +164,3 @@ async def my_sales(
             "total_price":    item.price * item.qty,
         })
     return result
-
-@router.put("/profile")
-async def update_profile(
-    data: ProfileUpdate,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Foydalanuvchi o'z profilini yangilaydi"""
-    current_user.name         = data.name.strip()
-    current_user.full_name    = data.full_name or ""
-    current_user.school       = data.school or ""
-    current_user.age          = data.age or 0
-    current_user.illness_info = data.illness_info or ""
-    current_user.avatar       = data.avatar or ""
-
-    # Agar imkoniyati cheklangan bo'lsa — karta raqami
-    if current_user.is_disabled:
-        current_user.card_number = data.card_number or ""
-
-    await db.flush()
-    await db.refresh(current_user)
-    return user_dict(current_user)

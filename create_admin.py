@@ -18,7 +18,7 @@ async def main():
         db.add(User(
             name="Bosh Admin",
             username="admin",
-            password=hash_password("admin123"),
+            password=hash_password("admin123"[:72]),
             email="admin@yoshijodkor.uz",
             role="superadmin",
             active=True,

@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 
 class ProductCreate(BaseModel):
-    name_uz:      str   = Field(..., description="O'zbek nomи")
+    name_uz:      str   = Field(..., description="O'zbek nomi")
     name_ru:      str   = ""
     desc_uz:      str   = ""
     desc_ru:      str   = ""
@@ -31,6 +31,7 @@ class ProductCreate(BaseModel):
     rating:       float = 5.0
     reviews:      int   = 0
     sold:         int   = 0
+    student_id:   Optional[int] = None
 
 
 class ProductResponse(BaseModel):
@@ -63,6 +64,7 @@ class ProductResponse(BaseModel):
     rating:       float
     reviews:      int
     sold:         int
+    student_id:   Optional[int] = None
 
     class Config:
         from_attributes = True

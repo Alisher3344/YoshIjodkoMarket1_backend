@@ -7,7 +7,8 @@ class Product(Base):
     __tablename__ = "products"
 
     id           = Column(Integer, primary_key=True, index=True)
-    user_id      = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # kim yaratgan
+    user_id      = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    student_id   = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=True)
     name_uz      = Column(String, nullable=False)
     name_ru      = Column(String, default="")
     desc_uz      = Column(Text,   default="")

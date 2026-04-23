@@ -2,19 +2,35 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from ..core.database import get_db
 from ..core.security import get_current_user
 from ..crud import product as product_crud
 from ..models.product import Product
 from ..models.user import User
+from ..models.student import Student
 from ..schemas.product import ProductCreate
 
 router = APIRouter()
 
 
-def product_to_dict(p: Product, user: User = None) -> dict:
-    """Product + user avatar birgalikda"""
+def product_to_dict(p: Product, user: User = None, student: Student = None) -> dict:
+    """Product + admin va student ma'lumotlari birgalikda"""
+    # Avtor ma'lumotlari — avval student (agar bog'langan bo'lsa), keyin user
+    author_avatar = ""
+    full_name = ""
+    illness_info = ""
+
+    if student:
+        author_avatar = student.avatar or ""
+        full_name = student.full_name or student.name or ""
+        if student.is_disabled:
+            illness_info = student.illness_info or ""
+    elif user:
+        author_avatar = user.avatar or ""
+        full_name = user.full_name or ""
+        if user.is_disabled:
+            illness_info = user.illness_info or ""
+
     d = {
         "id":           p.id,
         "name_uz":      p.name_uz,
@@ -46,12 +62,29 @@ def product_to_dict(p: Product, user: User = None) -> dict:
         "reviews":      p.reviews,
         "sold":         p.sold,
         "user_id":      p.user_id,
+        "student_id":   p.student_id,
         # Muallif haqida
-        "author_avatar": user.avatar if user else "",
-        "illness_info":  user.illness_info if user and user.is_disabled else "",
-        "full_name":     user.full_name if user else "",
+        "author_avatar": author_avatar,
+        "illness_info":  illness_info,
+        "full_name":     full_name,
     }
     return d
+
+
+async def _fetch_author_info(db: AsyncSession, product: Product):
+    """Student va user ma'lumotlarini olish"""
+    student = None
+    user = None
+
+    if product.student_id:
+        s_res = await db.execute(select(Student).where(Student.id == product.student_id))
+        student = s_res.scalar_one_or_none()
+
+    if product.user_id:
+        u_res = await db.execute(select(User).where(User.id == product.user_id))
+        user = u_res.scalar_one_or_none()
+
+    return user, student
 
 
 @router.get("/")
@@ -71,14 +104,10 @@ async def get_products(
     result = await db.execute(query)
     products = result.scalars().all()
 
-    # Har bir mahsulot uchun user ni olish
     response = []
     for p in products:
-        user = None
-        if p.user_id:
-            u_res = await db.execute(select(User).where(User.id == p.user_id))
-            user = u_res.scalar_one_or_none()
-        response.append(product_to_dict(p, user))
+        user, student = await _fetch_author_info(db, p)
+        response.append(product_to_dict(p, user, student))
 
     return response
 
@@ -94,7 +123,15 @@ async def get_my_products(
     )
     products = result.scalars().all()
 
-    return [product_to_dict(p, current_user) for p in products]
+    response = []
+    for p in products:
+        student = None
+        if p.student_id:
+            s_res = await db.execute(select(Student).where(Student.id == p.student_id))
+            student = s_res.scalar_one_or_none()
+        response.append(product_to_dict(p, current_user, student))
+
+    return response
 
 
 @router.get("/{product_id}")
@@ -103,12 +140,8 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
     if not product:
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
 
-    user = None
-    if product.user_id:
-        u_res = await db.execute(select(User).where(User.id == product.user_id))
-        user = u_res.scalar_one_or_none()
-
-    return product_to_dict(product, user)
+    user, student = await _fetch_author_info(db, product)
+    return product_to_dict(product, user, student)
 
 
 @router.post("/")
@@ -120,27 +153,65 @@ async def create_product(
     """Yangi mahsulot qo'shish"""
     d = data.model_dump()
 
-    if current_user.is_disabled:
-        d["student_type"] = "disabled"
-        if current_user.card_number and not d.get("card_number"):
-            d["card_number"] = current_user.card_number
+    # Agar student_id berilgan bo'lsa — student ma'lumotlarini avtomatik to'ldirish
+    student = None
+    if d.get("student_id"):
+        s_res = await db.execute(select(Student).where(Student.id == d["student_id"]))
+        student = s_res.scalar_one_or_none()
+        if not student:
+            raise HTTPException(status_code=404, detail="O'quvchi topilmadi")
+        # Admin bu o'quvchini o'zi yaratganini tekshirish
+        if student.admin_id != current_user.id and current_user.role != "superadmin":
+            raise HTTPException(status_code=403, detail="Bu sizning o'quvchingiz emas")
 
-    if not d.get("author"):
-        d["author"] = current_user.full_name or current_user.name
-    if not d.get("school"):
-        d["school"] = current_user.school or ""
+        # Ma'lumotlarni student'dan to'ldirish
+        if student.is_disabled:
+            d["student_type"] = "disabled"
+            if not d.get("card_number"):
+                d["card_number"] = student.card_number or ""
 
-    # Avtor profil rasmi va kasallik haqida
-    if current_user.avatar and not d.get("photo"):
-        d["photo"] = current_user.avatar
-    if current_user.illness_info and not d.get("story_uz"):
-        d["story_uz"] = current_user.illness_info
+        if not d.get("author"):
+            d["author"] = student.full_name or student.name
+        if not d.get("author_ru"):
+            d["author_ru"] = student.name_ru or student.name
+        if not d.get("school"):
+            d["school"] = student.school or ""
+        if not d.get("school_ru"):
+            d["school_ru"] = student.school_ru or ""
+        if not d.get("district"):
+            d["district"] = student.district or ""
+        if not d.get("region"):
+            d["region"] = student.region or ""
+        if not d.get("grade"):
+            d["grade"] = student.grade or ""
+        if not d.get("phone"):
+            d["phone"] = student.phone or ""
+        if not d.get("photo"):
+            d["photo"] = student.avatar or ""
+        if student.illness_info and not d.get("story_uz"):
+            d["story_uz"] = student.illness_info
+    else:
+        # Eski rejim — user o'zi mahsulot qo'shsa
+        if current_user.is_disabled:
+            d["student_type"] = "disabled"
+            if current_user.card_number and not d.get("card_number"):
+                d["card_number"] = current_user.card_number
+
+        if not d.get("author"):
+            d["author"] = current_user.full_name or current_user.name
+        if not d.get("school"):
+            d["school"] = current_user.school or ""
+
+        if current_user.avatar and not d.get("photo"):
+            d["photo"] = current_user.avatar
+        if current_user.illness_info and not d.get("story_uz"):
+            d["story_uz"] = current_user.illness_info
 
     product = Product(**d, user_id=current_user.id)
     db.add(product)
     await db.flush()
     await db.refresh(product)
-    return product_to_dict(product, current_user)
+    return product_to_dict(product, current_user, student)
 
 
 @router.put("/{product_id}")
@@ -160,12 +231,8 @@ async def update_product(
 
     await product_crud.update(db, product, data)
 
-    user = None
-    if product.user_id:
-        u_res = await db.execute(select(User).where(User.id == product.user_id))
-        user = u_res.scalar_one_or_none()
-
-    return product_to_dict(product, user)
+    user, student = await _fetch_author_info(db, product)
+    return product_to_dict(product, user, student)
 
 
 @router.delete("/{product_id}")
@@ -184,6 +251,8 @@ async def delete_product(
 
     await product_crud.delete(db, product)
     return {"success": True}
+
+
 @router.get("/user/{user_id}")
 async def get_products_by_user(user_id: int, db: AsyncSession = Depends(get_db)):
     """Ma'lum user mahsulotlari — muallif sahifasi uchun"""
@@ -198,4 +267,12 @@ async def get_products_by_user(user_id: int, db: AsyncSession = Depends(get_db))
     u_res = await db.execute(select(User).where(User.id == user_id))
     user = u_res.scalar_one_or_none()
 
-    return [product_to_dict(p, user) for p in products]
+    response = []
+    for p in products:
+        student = None
+        if p.student_id:
+            s_res = await db.execute(select(Student).where(Student.id == p.student_id))
+            student = s_res.scalar_one_or_none()
+        response.append(product_to_dict(p, user, student))
+
+    return response

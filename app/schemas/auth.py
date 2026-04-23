@@ -8,13 +8,10 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    name:        str
-    phone:       str
-    password:    str
-    school:      str = ""
-    age:         int = 0
-    is_disabled: bool = False
-    card_number: Optional[str] = ""
+    name:      str                    # Ism
+    full_name: Optional[str] = ""     # Familiya
+    phone:     str                    # +998 XX XXX XX XX
+    password:  str
 
 
 class TokenResponse(BaseModel):
