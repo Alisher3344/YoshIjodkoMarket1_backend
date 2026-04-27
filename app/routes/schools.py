@@ -178,10 +178,21 @@ async def assign_new_admin(
     from sqlalchemy import select
 
     existing = await db.execute(select(User).where(User.username == username))
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=409, detail="Bu username allaqachon mavjud"
-        )
+    existing_user = existing.scalar_one_or_none()
+    if existing_user:
+        # Agar bu user "o'chirilgan" admin bo'lsa (maktabga bog'lanmagan, role=admin),
+        # username'ni avtomatik bo'shatamiz va yangi admin yarataveramiz.
+        # Bu — eski detach qilingan adminlar uchun ham ishlaydi.
+        if existing_user.role == "admin" and existing_user.school_id is None:
+            existing_user.username = (
+                f"_deleted_{existing_user.id}_{existing_user.username}"[:100]
+            )
+            existing_user.active = False
+            await db.flush()
+        else:
+            raise HTTPException(
+                status_code=409, detail="Bu username allaqachon mavjud"
+            )
 
     new_admin = User(
         name=name,
@@ -235,10 +246,19 @@ async def update_admin(
         ex = await db.execute(
             select(User).where(User.username == new_username, User.id != admin.id)
         )
-        if ex.scalar_one_or_none():
-            raise HTTPException(
-                status_code=409, detail="Bu username allaqachon mavjud"
-            )
+        conflict = ex.scalar_one_or_none()
+        if conflict:
+            # Agar konflikt — "o'chirilgan" admin bo'lsa, uning username'ni bo'shatamiz
+            if conflict.role == "admin" and conflict.school_id is None:
+                conflict.username = (
+                    f"_deleted_{conflict.id}_{conflict.username}"[:100]
+                )
+                conflict.active = False
+                await db.flush()
+            else:
+                raise HTTPException(
+                    status_code=409, detail="Bu username allaqachon mavjud"
+                )
         admin.username = new_username
 
     if new_password:
@@ -268,7 +288,10 @@ async def update_admin(
 async def detach_admin(
     school_id: int, admin_id: int, db: AsyncSession = Depends(get_db)
 ):
-    """Adminni maktabdan ajratish (admin saqlanadi, faqat school_id null bo'ladi)"""
+    """Adminni maktabdan o'chirish.
+    Admin row saqlanadi (Student.admin_id CASCADE bo'lgani uchun, students ketib qolmasin),
+    lekin username bo'shatiladi va active=False bo'ladi — shu username qaytadan ishlatilishi mumkin.
+    """
     from sqlalchemy import select
 
     res = await db.execute(select(User).where(User.id == admin_id))
@@ -277,7 +300,12 @@ async def detach_admin(
         raise HTTPException(status_code=404, detail="Admin topilmadi")
     if admin.school_id != school_id:
         raise HTTPException(status_code=400, detail="Admin bu maktabga biriktirilmagan")
+
+    # Username'ni bo'shatish — unique constraint sababli suffix qo'shamiz.
+    # Shunda superadmin shu username bilan yangi admin yarata oladi.
+    admin.username = f"_deleted_{admin.id}_{admin.username}"[:100]
     admin.school_id = None
     admin.school = ""
+    admin.active = False
     await db.flush()
     return {"success": True}
