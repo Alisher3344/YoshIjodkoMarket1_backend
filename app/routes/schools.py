@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.database import get_db
@@ -15,8 +16,10 @@ def school_dict(s) -> dict:
         "id":          s.id,
         "name":        s.name,
         "name_ru":     s.name_ru or "",
-        "district":    s.district or "",
+        "country":     s.country or "O'zbekiston",
         "region":      s.region or "",
+        "city":        s.city or "",
+        "district":    s.district or "",
         "address":     s.address or "",
         "phone":       s.phone or "",
         "photo":       s.photo or "",
@@ -39,14 +42,55 @@ def admin_dict(u: User) -> dict:
 
 
 @router.get("/")
-async def list_schools(db: AsyncSession = Depends(get_db)):
+async def list_schools(
+    country:  Optional[str] = Query(None),
+    region:   Optional[str] = Query(None),
+    city:     Optional[str] = Query(None),
+    district: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Maktablar ro'yxati. Hududiy filtrlash uchun query paramlar:
+    ?region=Qashqadaryo viloyati&city=Qarshi shahri va h.k."""
     schools = await school_crud.get_all(db)
     out = []
     for s in schools:
+        if country and (s.country or "") != country:
+            continue
+        if region and (s.region or "") != region:
+            continue
+        if city and (s.city or "") != city:
+            continue
+        if district and (s.district or "") != district:
+            continue
         d = school_dict(s)
         d["admin_count"] = await school_crud.admin_count(db, s.id)
         out.append(d)
     return out
+
+
+@router.get("/regions/list")
+async def list_regions(db: AsyncSession = Depends(get_db)):
+    """Foydalanuvchi tanlash uchun: hozirgi DB'dagi viloyat/shahar/tuman ro'yxatlari.
+    Frontend filter dropdownlarda ishlatadi."""
+    schools = await school_crud.get_all(db)
+    regions: dict = {}
+    for s in schools:
+        r = s.region or ""
+        if not r:
+            continue
+        regions.setdefault(r, {"cities": set(), "districts": set()})
+        if s.city:
+            regions[r]["cities"].add(s.city)
+        if s.district:
+            regions[r]["districts"].add(s.district)
+    return [
+        {
+            "region":    r,
+            "cities":    sorted(v["cities"]),
+            "districts": sorted(v["districts"]),
+        }
+        for r, v in sorted(regions.items())
+    ]
 
 
 @router.get("/{school_id}")
@@ -154,6 +198,67 @@ async def assign_new_admin(
     await db.flush()
     await db.refresh(new_admin)
     return admin_dict(new_admin)
+
+
+@router.patch(
+    "/{school_id}/admins/{admin_id}",
+    dependencies=[Depends(require_superadmin)],
+)
+async def update_admin(
+    school_id: int,
+    admin_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin username va/yoki parolini yangilash (superadmin uchun).
+    payload: {username?, password?, name?, full_name?, phone?}
+    """
+    from sqlalchemy import select
+
+    res = await db.execute(select(User).where(User.id == admin_id))
+    admin = res.scalar_one_or_none()
+    if not admin:
+        raise HTTPException(status_code=404, detail="Admin topilmadi")
+    if admin.school_id != school_id:
+        raise HTTPException(
+            status_code=400, detail="Admin bu maktabga biriktirilmagan"
+        )
+
+    new_username = (payload.get("username") or "").strip()
+    new_password = payload.get("password") or ""
+    new_name = (payload.get("name") or "").strip()
+    new_full_name = (payload.get("full_name") or "").strip()
+    new_phone = (payload.get("phone") or "").strip()
+
+    if new_username and new_username != admin.username:
+        # Username unikalligini tekshirish
+        ex = await db.execute(
+            select(User).where(User.username == new_username, User.id != admin.id)
+        )
+        if ex.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409, detail="Bu username allaqachon mavjud"
+            )
+        admin.username = new_username
+
+    if new_password:
+        if len(new_password) < 6:
+            raise HTTPException(
+                status_code=400,
+                detail="Parol kamida 6 ta belgidan iborat bo'lishi kerak",
+            )
+        admin.password = hash_password(new_password)
+
+    if new_name:
+        admin.name = new_name
+    if new_full_name:
+        admin.full_name = new_full_name
+    if new_phone:
+        admin.phone = new_phone
+
+    await db.flush()
+    await db.refresh(admin)
+    return admin_dict(admin)
 
 
 @router.delete(

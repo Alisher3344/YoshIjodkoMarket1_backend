@@ -90,6 +90,9 @@ async def all_students_grouped_by_school(
         out.append({
             "school_id":   s.id,
             "school_name": s.name,
+            "country":     s.country or "O'zbekiston",
+            "region":      s.region or "",
+            "city":        s.city or "",
             "district":    s.district or "",
             "students":    by_school.get(s.id, []),
         })
@@ -97,6 +100,9 @@ async def all_students_grouped_by_school(
         out.append({
             "school_id":   None,
             "school_name": "Maktabsiz",
+            "country":     "",
+            "region":      "",
+            "city":        "",
             "district":    "",
             "students":    no_school,
         })

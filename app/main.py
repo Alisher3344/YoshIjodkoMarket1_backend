@@ -16,6 +16,9 @@ MIGRATION_SQL = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT UNIQUE",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_username VARCHAR(100) DEFAULT ''",
+    # schools — hududiy ierarxiya (Respublika → Viloyat → Shahar/Tuman)
+    "ALTER TABLE schools ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'O''zbekiston'",
+    "ALTER TABLE schools ADD COLUMN IF NOT EXISTS city VARCHAR(200) DEFAULT ''",
     # students — school_id ustun (bir maktabga 2+ admin ulansa, ular bir xil studentlarni ko'rishadi)
     "ALTER TABLE students ADD COLUMN IF NOT EXISTS school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL",
     # students — Telegram orqali ro'yxatdan o'tish uchun ustunlar
