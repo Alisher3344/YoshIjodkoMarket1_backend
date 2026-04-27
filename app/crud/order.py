@@ -3,6 +3,9 @@ from sqlalchemy.orm import selectinload
 from .. import models
 from ..models.order import Order, OrderItem, CustomOrder
 from ..models.product import Product
+from ..models.student import Student
+from ..models.user import User
+from ..utils.telegram import send_telegram_dm
 
 
 async def create_order(db, data):
@@ -20,6 +23,9 @@ async def create_order(db, data):
     )
     db.add(order)
     await db.flush()
+
+    # Stock 0 ga tushgan student-mahsulotlarini kuzatish — keyin Telegram notify
+    sold_out = []  # [{product, qty}]
 
     for item in data.items:
         # OrderItem yaratish
@@ -48,9 +54,60 @@ async def create_order(db, data):
                 product.stock = max(0, (product.stock or 0) - item.qty)
                 product.sold  = (product.sold or 0) + item.qty
 
+                # Stock 0 va student'ga bog'langan bo'lsa — notify ro'yxatiga qo'shamiz
+                if product.stock == 0 and product.student_id:
+                    sold_out.append({"product": product, "qty": item.qty})
+
     await db.flush()
     await db.refresh(order)
+
+    # Notifikatsiyalarni yuborish (xato bo'lsa ham order yaratiladi)
+    for entry in sold_out:
+        try:
+            await _notify_student_sold_out(
+                db,
+                product=entry["product"],
+                qty=entry["qty"],
+                buyer_name=data.customer_name or "",
+                buyer_phone=data.customer_phone or "",
+            )
+        except Exception as e:
+            print(f"[Telegram notify] xato: {e}")
+
     return order
+
+
+async def _notify_student_sold_out(
+    db, *, product, qty: int, buyer_name: str, buyer_phone: str
+):
+    """Student stock=0 bo'lganda Telegram orqali xabar yuborish.
+    Faqat student Telegram orqali ro'yxatdan o'tgan bo'lsa (user.telegram_id mavjud).
+    """
+    if not product or not product.student_id:
+        return
+
+    s_res = await db.execute(select(Student).where(Student.id == product.student_id))
+    student = s_res.scalar_one_or_none()
+    if not student or not student.user_id:
+        return
+
+    u_res = await db.execute(select(User).where(User.id == student.user_id))
+    user = u_res.scalar_one_or_none()
+    if not user or not user.telegram_id:
+        return
+
+    text = (
+        f"🎉 <b>Tabriklaymiz! Mahsulotingiz sotildi</b>\n\n"
+        f"📦 <b>Mahsulot:</b> {product.name_uz}\n"
+        f"🛒 <b>Holat:</b> Stock tugadi (0 dona qoldi)\n"
+        f"💰 <b>Narxi:</b> {int(product.price or 0):,} so'm\n\n"
+        f"👤 <b>Xaridor:</b> {buyer_name or '—'}\n"
+        f"📞 <b>Telefon:</b> {buyer_phone or '—'}\n"
+        f"🔢 <b>Sotilgan soni:</b> {qty} dona\n\n"
+        f"💡 Yangi mahsulot yuklash uchun Mini App'ni oching."
+    ).replace(",", " ")
+
+    await send_telegram_dm(int(user.telegram_id), text)
 
 
 async def get_all_orders(db):

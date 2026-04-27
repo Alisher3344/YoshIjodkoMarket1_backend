@@ -134,3 +134,28 @@ async def send_telegram(
     except Exception as e:
         print(f"❌ Telegram exception: {e}")
         return False
+
+
+async def send_telegram_dm(telegram_id: int, text: str) -> bool:
+    """Bot orqali muayyan foydalanuvchiga (telegram_id) shaxsiy xabar yuborish.
+    TELEGRAM_BOT_TOKEN ishlatadi (Mini App / Bot tokeni)."""
+    if not settings.TELEGRAM_BOT_TOKEN or not telegram_id:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id":    telegram_id,
+                    "text":       text,
+                    "parse_mode": "HTML",
+                },
+            )
+            if r.status_code == 200:
+                print(f"✅ Telegram DM → {telegram_id}")
+                return True
+            print(f"❌ Telegram DM → {telegram_id}: {r.status_code} {r.text[:200]}")
+            return False
+    except Exception as e:
+        print(f"❌ Telegram DM exception ({telegram_id}): {e}")
+        return False
