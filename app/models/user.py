@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.sql import func
 from ..core.database import Base
 
@@ -13,7 +13,8 @@ class User(Base):
     password      = Column(String(200), nullable=False)
     email         = Column(String(200), default="")
     phone         = Column(String(50),  default="")
-    school        = Column(String(300), default="")
+    school        = Column(String(300), default="")       # erkin matn (legacy)
+    school_id     = Column(Integer, ForeignKey("schools.id", ondelete="SET NULL"), nullable=True)
     age           = Column(Integer,     default=0)
     is_disabled   = Column(Boolean,     default=False)
     card_number   = Column(String(50),  default="")
@@ -21,4 +22,6 @@ class User(Base):
     avatar        = Column(Text,        default="")       # base64 rasm
     role          = Column(String(50),  default="student")
     active        = Column(Boolean,     default=True)
-    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+    telegram_id       = Column(BigInteger, unique=True, index=True, nullable=True)
+    telegram_username = Column(String(100), default="", nullable=True)
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())

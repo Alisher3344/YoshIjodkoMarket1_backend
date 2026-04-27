@@ -1,1 +1,1 @@
-from . import user, product, order, student
+from . import user, product, order, student, school

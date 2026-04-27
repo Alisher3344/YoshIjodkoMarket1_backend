@@ -1,1 +1,1 @@
-from app.routes import auth, products, orders, custom_orders, users, contact, students
+from app.routes import auth, products, orders, custom_orders, users, contact, students, schools, telegram

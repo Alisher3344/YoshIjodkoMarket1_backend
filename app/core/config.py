@@ -12,6 +12,11 @@ class Settings:
     CLIENT_URL: str = os.getenv("CLIENT_URL", "http://localhost:5173")
     TELEGRAM_TOKEN: str = os.getenv("TELEGRAM_TOKEN", "")
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    # Telegram Mini App / Bot uchun
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_MINIAPP_URL: str = os.getenv(
+        "TELEGRAM_MINIAPP_URL", "https://yoshijodkor.uz"
+    )
 
 
 settings = Settings()

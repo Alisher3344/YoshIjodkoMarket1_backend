@@ -1,6 +1,72 @@
 import base64
+import hashlib
+import hmac
+import json
+import time
+from urllib.parse import parse_qsl
+
 import httpx
+
 from ..core.config import settings
+
+
+# ─── Telegram Mini App initData verifikatsiyasi ─────────────────────────────
+# https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+
+def verify_webapp_init_data(init_data: str, max_age_sec: int = 86400):
+    """Telegram Mini App'dan kelgan initData ni HMAC-SHA256 bilan tekshiradi.
+    Muvaffaqiyatli bo'lsa parsed dict qaytaradi, aks holda None.
+
+    init_data — query-string format: "auth_date=...&hash=...&user=..."
+    """
+    if not init_data or not settings.TELEGRAM_BOT_TOKEN:
+        return None
+
+    try:
+        parsed = dict(parse_qsl(init_data, strict_parsing=True))
+    except Exception:
+        return None
+
+    received_hash = parsed.pop("hash", None)
+    if not received_hash:
+        return None
+
+    # Hashni hisoblash uchun stringni yaratish
+    data_check_string = "\n".join(
+        f"{k}={v}" for k, v in sorted(parsed.items())
+    )
+
+    secret_key = hmac.new(
+        b"WebAppData",
+        settings.TELEGRAM_BOT_TOKEN.encode(),
+        hashlib.sha256,
+    ).digest()
+
+    calculated_hash = hmac.new(
+        secret_key, data_check_string.encode(), hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(calculated_hash, received_hash):
+        return None
+
+    # Eskirgan initData rad etiladi (default — 24 soat)
+    auth_date = int(parsed.get("auth_date", "0") or 0)
+    if auth_date <= 0 or (time.time() - auth_date) > max_age_sec:
+        return None
+
+    user_json = parsed.get("user")
+    user = None
+    if user_json:
+        try:
+            user = json.loads(user_json)
+        except Exception:
+            user = None
+
+    return {
+        "user": user,
+        "auth_date": auth_date,
+        "raw": parsed,
+    }
 
 
 async def send_telegram(

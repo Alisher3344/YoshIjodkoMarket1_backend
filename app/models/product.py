@@ -37,4 +37,5 @@ class Product(Base):
     rating       = Column(Float,  default=5.0)
     reviews      = Column(Integer, default=0)
     sold         = Column(Integer, default=0)
+    status       = Column(String(20), default="approved", nullable=False, index=True)
     created_at   = Column(DateTime(timezone=True), server_default=func.now())

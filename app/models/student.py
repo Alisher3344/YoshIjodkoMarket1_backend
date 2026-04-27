@@ -7,7 +7,10 @@ class Student(Base):
     __tablename__ = "students"
 
     id            = Column(Integer, primary_key=True, index=True)
-    admin_id      = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    admin_id      = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    user_id       = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    status        = Column(String(20), default="approved", nullable=False, index=True)
+    school_id     = Column(Integer, ForeignKey("schools.id", ondelete="SET NULL"), nullable=True, index=True)
     name          = Column(String(200), nullable=False)
     full_name     = Column(String(300), default="")
     name_ru       = Column(String(200), default="")
