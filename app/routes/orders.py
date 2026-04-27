@@ -130,3 +130,15 @@ async def update_status(
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
     await order_crud.update_order_status(db, order, data.status)
     return {"success": True}
+
+
+@router.delete("/{order_id}", dependencies=[Depends(check_role("moderator"))])
+async def delete_order_endpoint(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    order = await order_crud.get_order_by_id(db, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    await order_crud.delete_order(db, order)
+    return {"success": True}

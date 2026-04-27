@@ -134,6 +134,11 @@ async def update_order_status(db, order, status):
     return order
 
 
+async def delete_order(db, order):
+    await db.delete(order)
+    await db.flush()
+
+
 async def create_custom_order(db, data):
     custom_order = CustomOrder(**data.model_dump())
     db.add(custom_order)
