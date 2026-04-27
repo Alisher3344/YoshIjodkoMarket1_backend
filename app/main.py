@@ -2,8 +2,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-from app.core.database import engine, Base
-from app.routes import auth, products, orders, custom_orders, users, contact, students, schools, telegram
+from app.core.database import engine, Base, AsyncSessionLocal
+from app.routes import auth, products, orders, custom_orders, users, contact, students, schools, telegram, regions
+from app.seed_regions import seed_regions_if_empty
 
 
 # Eski jadvallarga yangi ustunlarni avtomatik qo'shish (Postgres uchun)
@@ -43,6 +44,18 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"SKIP migration ({type(e).__name__}): {stmt[:80]}")
     print("Database tayyor")
+
+    # Hududiy ma'lumotlarni seed qilish (jadval bo'sh bo'lsa)
+    try:
+        async with AsyncSessionLocal() as session:
+            added = await seed_regions_if_empty(session)
+            if added:
+                print(f"OK seed: {added} ta region qo'shildi (shaharlar+tumanlar bilan)")
+            else:
+                print("SKIP seed: regions jadvali allaqachon to'la")
+    except Exception as e:
+        print(f"SKIP seed regions ({type(e).__name__}): {e}")
+
     print("=== Registered routes ===")
     for route in app.routes:
         if hasattr(route, "methods") and hasattr(route, "path"):
@@ -82,3 +95,4 @@ app.include_router(contact.router,       prefix="/api/contact",       tags=["Alo
 app.include_router(students.router,      prefix="/api/students",      tags=["O'quvchilar"])
 app.include_router(schools.router,       prefix="/api/schools",       tags=["Maktablar"])
 app.include_router(telegram.router,      prefix="/api/telegram",      tags=["Telegram"])
+app.include_router(regions.router,       prefix="/api/regions",       tags=["Hududlar"])
